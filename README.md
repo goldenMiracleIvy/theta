@@ -33,6 +33,57 @@ THETA’s edge on Derive: **one wrapped asset (FXRP) is simultaneously the hold 
 
 ---
 
+## Funding the desk — wrapping XRP into FXRP
+
+THETA's margin is **FXRP**, wrapped XRP on Flare. Everything the desk does starts here, so the on-ramp ships with the agent rather than living in someone's shell history.
+
+**Working code:** [`tools/fxrp_onramp/`](tools/fxrp_onramp/) — dry-run by default, key-free, resolves the Core Vault and every fee live from the Flare registry.
+
+```
+XRPL XRP  ──Payment + 32-byte memo──▶  FAssets Core Vault
+                                              │
+                                              ▼
+                                    FXRP on Flare (chain 14)
+                                              │
+                                     Derive UI: Deposit → Flare → FXRP
+                                              │
+                                              ▼
+                              THETA subaccount margin  ──▶  theta_park
+```
+
+### How to do it
+
+```bash
+cd tools/fxrp_onramp && npm install
+npm run preflight                                    # read-only: vault, token, fees
+cp .env.example .env                                 # fill in recipient + amount
+node mint_fxrp.mjs --recipient 0x<flare-eoa> --amount 30            # dry run
+node mint_fxrp.mjs --recipient 0x<flare-eoa> --amount 30 --broadcast
+```
+
+Then move it onto Derive: **Derive → Deposit → Flare → FXRP**.
+
+### What the mint costs
+
+The XRPL payment is `net + max(net × feeBIPS / 10000, minimumFee) + executorFee`. Read live on mainnet:
+
+| Setting | Value |
+|---|---|
+| `getDirectMintingFeeBIPS` | 10 (0.10%) |
+| `getDirectMintingMinimumFeeUBA` | 0.1 XRP |
+| `getDirectMintingExecutorFeeUBA` | 0.2 XRP |
+
+The minimum binds at small sizes, so converting **30 XRP costs 30.30 XRP** — not 30.03. `npm run preflight` always prints current values; nothing is hardcoded.
+
+### Two things that will cost you money
+
+- **Mint only to a Flare EOA whose private key you hold.** The mint recipient is not the same thing as a Derive address. Minting to a contract-wallet address strands the FXRP — it is a contract on Derive (chain 957) and a *keyless* EOA on Flare (chain 14), so no session key can ever spend it. `mint_fxrp.mjs` refuses one known address of exactly this kind.
+- **The Derive hop is manual, and cannot be automated.** Flare is chain **14**, Derive is chain **957**, and FXRP is a different contract on each. Derive's REST `/private/deposit` assumes the asset is *already* on 957 — it does not bridge, and there is no supported programmatic bridge. This is the one manual step in THETA's funding path, and the reason `theta_park` cannot self-fund.
+
+The mint is also not instant: `tesSUCCESS` on XRPL means the payment landed, then Flare executors finalise it. Poll the FXRP balance; do not re-send.
+
+---
+
 ## Architecture
 
 Four clerk scripts print numbers. The Condor tick signs **one** line. Hummingbot fills the perpetual. The Hummingbot connector has **no** options path — a call is sold only through `theta_option_ticket`, and only when that ticket is armed live.

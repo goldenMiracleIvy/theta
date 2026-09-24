@@ -1,0 +1,19 @@
+{
+  "name": "theta-xrp-onramp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Wrap XRP into FXRP on Flare (FAssets direct minting) so THETA has collateral to park.",
+  "type": "module",
+  "scripts": {
+    "preflight": "node resolve_core_vault.mjs",
+    "mint": "node mint_fxrp.mjs"
+  },
+  "dependencies": {
+    "@flarenetwork/flare-wagmi-periphery-package": "^3.6.0",
+    "viem": "^2.56.0",
+    "xrpl": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

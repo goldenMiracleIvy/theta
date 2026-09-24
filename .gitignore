@@ -7,3 +7,5 @@ store/
 sessions/
 *.pkl
 .DS_Store
+!.env.example
+node_modules/
