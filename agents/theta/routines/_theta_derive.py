@@ -34,8 +34,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from ecdsa import SigningKey, SECP256k1, numbertheory
 from ecdsa.util import sigencode_string_canonize
 
-# The desk's own Derive subaccount. Override with DERIVE_SUBACCOUNT.
-THETA_DEFAULT_SUB = "70746"
+# The desk's own Derive subaccount (SM manager). Override with DERIVE_SUBACCOUNT.
+THETA_DEFAULT_SUB = "70652"
 
 DERIVE_BASE = "https://api.lyra.finance"
 # Private endpoint prefix on Derive's REST API.
@@ -144,7 +144,7 @@ _ETH_MISSING = (
 
 def _require_eth_account():
     try:
-        Account, _ = _require_eth_account()
+        from eth_account import Account
         from eth_account.messages import encode_defunct
     except ModuleNotFoundError as exc:  # pragma: no cover - env dependent
         raise RuntimeError(_ETH_MISSING) from exc
