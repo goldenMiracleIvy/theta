@@ -13,7 +13,7 @@ One book. One underlying. Two tickets at most.
 | **House** | Derive only (`derive_perpetual` + isolated options ticket) |
 | **Pair** | XRP-USDC |
 | **Cadence** | Condor tick every **300s** |
-| **Race envelope** | **$800** (half wallet working, half sleeve) |
+| **Race envelope** | **$800 USDT** — $400 FXRP pile + $400 USDC sleeve; working short ≤ $320 |
 
 ---
 
@@ -162,7 +162,7 @@ agents/theta/
 |---|---|---|
 | FXRP posted | **$400** | Bank + margin. Coins stay. Half the wallet. |
 | USDC sleeve | **$400** | Liquidation room. Never inventory. Half the wallet. |
-| XRP perpetual short | free-margin capped (pile-cap $400) | Hedge. Live size is leftover IM after FXRP locks its own margin — often well below $400. |
+| XRP perpetual short | **working ≤ $320** (80% pile), free-margin capped | Hedge. Live size from `theta_margin` open size — never full wallet. |
 | Optional call | 0 or 1 | Only on WRITE, only via isolated ticket. |
 
 `max_drawdown_pct: 8` **scales** the desk. It is **not** the short’s stop.
@@ -209,16 +209,62 @@ Smoke test ($60): $30 / $30 / $30 — pass `wallet_usd=60` to clerks.
 ---
 
 
-### Competition sizing ($800 race)
+### Competition sizing ($800 USDT race)
 
-| Line | Value |
+Total race capital is **$800 USDT-equivalent** on Derive. Split half/half so the
+desk always keeps liquidation room while the FXRP pile is the bank + margin.
+
+| Line | Value | Role |
+|---|---|---|
+| Total race capital | **$800** | Cup envelope (`total_amount_quote`) |
+| FXRP pile (posted) | **$400** mark | Bank + margin. Never sell for cash. |
+| USDC sleeve | **$400** | Shock / liquidation room. Never inventory. |
+| Working XRP short | **up to $320** (80% of pile) | Matched hedge; free-margin capped live |
+| Hard risk cap | `max_position_size_quote: **320**` | Platform ceiling |
+| Leverage | **1×** only | No leverage race |
+| Options wing | default **SIT** | Optional WRITE only if armed — not required for score |
+| Opens | fillable **LIMIT**, min **10 XRP** base | Avoid MARKET on this book |
+
+#### How much XRP → FXRP to mint (for the $400 pile)
+
+FXRP is 1:1 with XRP. Size the mint to **~$400 mark value** at the spot you
+fund (not a fixed token count forever):
+
+```
+net_FXRP ≈ 400 / XRP_USD_spot
+payment_XRP = net + max(net × feeBIPS/10000, minFee) + executorFee
+```
+
+Mainnet fees (re-read live with `npm run preflight`; typical):
+
+| Fee | Typical |
 |---|---|
-| Wallet | $800 |
-| FXRP / USDC sleeve | $400 / $400 |
-| Working short | **up to $320** (80% of pile, free-margin capped) |
-| Hard risk cap | `max_position_size_quote: 320` |
-| Options | default **SIT** — not required for P&L/volume |
-| Opens | fillable LIMIT, min **10 XRP**; avoid MARKET |
+| mint fee | max(0.10% of net, **0.1 XRP**) |
+| executor | **0.2 XRP** |
+
+**Examples (net FXRP → XRPL payment):**
+
+| XRP spot | Net FXRP for ~$400 pile | Approx. XRPL payment |
+|---|---|---|
+| $1.00 | **400** FXRP | ~**400.3** XRP |
+| $1.50 | **~267** FXRP | ~**267.5** XRP |
+| $2.00 | **200** FXRP | ~**200.3** XRP |
+
+Also keep **$400 USDC** on the Derive subaccount as the sleeve (fund USDC
+separately — do not mint that half).
+
+**Derive deposit floor:** venue may require **≥ 10 FXRP** per deposit. Mint at
+least that (we used 41 FXRP in lab smoke). For race day, mint the full ~$400
+pile in one or two deposits to the Flare EOA you control, then:
+
+> Derive → Deposit → **Flare** → **FXRP** → THETA subaccount
+
+Recipient must be a Flare EOA whose key you hold (not the Derive owner
+address). `park_dry_run: true` until FXRP is posted; then the loop hedges.
+
+**Race P&L / volume intent:** funding on the working short while FXRP stays
+parked (P&L); OPEN / pump-CUT / RELOAD / REOPEN fills (volume). Options are
+optional juice only.
 
 ## Key parameters
 

@@ -101,8 +101,10 @@ That is a copyable carry, not a candle guess.
 
 ## Competition (48h)
 
+- **Capital:** $800 total — **$400 FXRP pile** + **$400 USDC sleeve**.
+- **Mint:** net FXRP ≈ 400 / XRP_USD spot (e.g. ~267 FXRP at $1.50) + fees; deposit via Derive UI (Flare → FXRP).
 - **P&L:** funding on the matched short while FXRP stays parked.
 - **Volume:** hedge OPEN / pump-CUT / RELOAD / REOPEN fills — not options churn.
-- **Size:** working short ≈ 80% of the FXRP pile (cap $320 on the $800 race), never above free margin.
+- **Size:** working short ≈ 80% of the FXRP pile (cap $320), never above free margin.
 - **Options:** default SIT. One call only if tape WRITE and `theta.option_live=yes`.
 - **Opens:** fillable LIMIT, ≥ 10 XRP. Avoid MARKET on this venue.

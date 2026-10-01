@@ -66,6 +66,14 @@ Full $400 pile short leaves no IM headroom when FXRP haircut + perp contingency
 bite together. **$320** still pays serious funding and prints real hedge volume,
 with a safer path through a 48h chop. Drawdown table scales from this working base.
 
+
+### XRP → FXRP mint for the $400 pile
+
+Mint **net FXRP ≈ $400 / XRP_USD spot** (1:1), plus live mint+executor fees
+(~0.1 + 0.2 XRP typical). Example at $1.50 spot: **~267 FXRP net** (~267.5 XRP
+paid on XRPL). Keep **$400 USDC** sleeve separate. Derive deposit floor often
+**≥ 10 FXRP**. Deposit via UI: Derive → Deposit → Flare → FXRP.
+
 ## Smoke test (small wallet)
 
 | Line | Size |

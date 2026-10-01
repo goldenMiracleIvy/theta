@@ -512,6 +512,18 @@ def _to_big(value: float) -> int:
     return int(round(value * 10 ** 18))
 
 
+
+def _price_str(price) -> str:
+    """Canonical decimal string matching ``_to_big`` (no float format rounding)."""
+    from decimal import Decimal, ROUND_HALF_UP
+    d = Decimal(str(price)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    # drop trailing zeros but keep enough precision that Decimal(str)==d for wire
+    s = format(d, "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s or "0"
+
+
 async def order(creds: dict[str, str], instrument_name: str, direction: str,
                 amount: float, limit_price: float, order_type: str = "limit",
                 time_in_force: str = "gtc", max_fee: float = 1000.0,
@@ -587,9 +599,9 @@ async def order(creds: dict[str, str], instrument_name: str, direction: str,
         "abi_values": [
             _checksum(asset_address),
             int(base_sub_id),
-            _to_big(limit_price),
+            _to_big(float(_price_str(limit_price))),
             _to_big(amount),
-            _to_big(max_fee),
+            _to_big(float(max_fee)),
             int(creds["sub_id"] or 0),  # recipient_id
             True if direction == "buy" else False,  # is_bid
         ],
@@ -602,9 +614,11 @@ async def order(creds: dict[str, str], instrument_name: str, direction: str,
         # Derive's API expects sub_id as a STRING for options (the value can exceed
         # what a JSON integer round-trips cleanly). For perps it is "0".
         "sub_id": str(base_sub_id),
-        "limit_price": str(f"{limit_price:.4g}"),
+        # Strings must re-parse to the SAME big-ints we signed. Never use
+        # format specs like .4g — they round and Derive returns 14014.
+        "limit_price": _price_str(limit_price),
         "type": "order",
-        "max_fee": str(int(max_fee)),
+        "max_fee": str(max_fee),
         "amount": str(amount),
         "instrument_name": symbol,
         "label": label,
