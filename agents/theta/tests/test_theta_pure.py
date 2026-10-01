@@ -9,6 +9,10 @@ ROUTINES = Path(__file__).resolve().parents[1] / "routines"
 sys.path.insert(0, str(ROUTINES))
 
 from _theta_math import (  # noqa: E402
+    base_xrp_for_short,
+    should_reload_hedge,
+    should_reopen_flat,
+    working_short,
     SIT,
     WRITE,
     allowed_short,
@@ -101,6 +105,44 @@ def test_split_wallet_smoke_and_race():
     assert abs(pump["net"] - 4.9) < 1e-9
 
 
+
+
+def test_working_short_and_base_xrp():
+    # race: 80% of $400 pile, free margin roomy → $320
+    assert working_short(400, 400) == 320.0
+    # free margin binds
+    assert working_short(400, 100) == 100.0
+    # dust → 0
+    assert working_short(400, 10) == 0.0
+    assert base_xrp_for_short(320, 1.60) == 200.0
+    assert base_xrp_for_short(10, 1.60) == 0.0  # < 10 XRP min
+    assert base_xrp_for_short(16, 1.60) == 10.0
+
+
+def test_reload_and_reopen_rules():
+    assert should_reload_hedge(cut_mark=1.00, spot=1.015, funding_pays_short=True) is True
+    assert should_reload_hedge(cut_mark=1.00, spot=1.03, funding_pays_short=True) is False
+    assert should_reload_hedge(cut_mark=1.00, spot=1.01, funding_pays_short=False) is False
+    assert should_reopen_flat(
+        funding_pays_short=True, flat_ticks=2, min_flat_ticks=2, room_ok=True, working_quote=320
+    )
+    assert not should_reopen_flat(
+        funding_pays_short=True, flat_ticks=1, min_flat_ticks=2, room_ok=True, working_quote=320
+    )
+
+
+
+
+def test_free_margin_flat_account():
+    from _theta_math import free_margin_for_short
+    # Live collaterals, flat book (locked_im=0) → free is nearly full equity
+    free = free_margin_for_short(0, 114.63, 114.63, 0.0, safety=0.90)
+    assert free == round(114.63 * 0.90, 2)
+    # Offline estimate path still works
+    free2 = free_margin_for_short(400, 400, 0.0, 0.0)
+    assert free2 > 0
+
+
 if __name__ == "__main__":
     test_tape_gate()
     test_half_wallet_short_is_400()
@@ -110,4 +152,7 @@ if __name__ == "__main__":
     test_sleeve_keeps_book_loose()
     test_ticket_never_fills_on_sit_or_dry_run()
     test_split_wallet_smoke_and_race()
+    test_working_short_and_base_xrp()
+    test_free_margin_flat_account()
+    test_reload_and_reopen_rules()
     print("theta pure tests OK")

@@ -29,6 +29,8 @@ FXRP_MM_HAIRCUT = _math.FXRP_MM_HAIRCUT
 PERP_IM_CONTINGENCY = _math.PERP_IM_CONTINGENCY
 PERP_MM_CONTINGENCY = _math.PERP_MM_CONTINGENCY
 allowed_short = _math.allowed_short
+working_short = _math.working_short
+base_xrp_for_short = _math.base_xrp_for_short
 book_is_tight = _math.book_is_tight
 drawdown_short = _math.drawdown_short
 split_wallet = _math.split_wallet
@@ -40,43 +42,32 @@ CATEGORY = "Monitoring"
 
 
 async def _derive_collaterals_value() -> tuple[float, float]:
-    """Live theta-pm2 collateral value and locked initial margin.
+    """Live subaccount equity and margin already consumed by positions/orders.
 
-    Returns (collaterals_value, sum_initial_margin). Both 0.0 if Derive is
-    unreachable so the routine falls back to the offline haircut estimate
-    instead of failing the tick.
+    Returns (collaterals_value, locked_im). locked_im is
+    positions_initial_margin + open_orders_margin — NOT the sum of each
+    collateral row's initial_margin. On SM, a pure-USDC row reports
+    initial_margin == mark_value even with no positions, which made free
+    margin always 0 and forced the offline estimate.
+
+    Both 0.0 if Derive is unreachable so the tick falls back to the offline
+    haircut estimate instead of failing.
     """
     try:
         _derive = _theta_mod("_theta_derive")
         creds = _derive.from_condor_keystore()
-        import aiohttp
-
-        async with aiohttp.ClientSession() as s:
-            headers = _derive.auth_headers(creds)
-            headers["Content-Type"] = "application/json"
-            body = {
-                "wallet": creds["api_key"],
-                "subaccount_id": int(creds["sub_id"]),
-            }
-            async with s.post(
-                "https://api.lyra.finance/private/get_subaccount",
-                data=__import__("json").dumps(body),
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as r:
-                d = __import__("json").loads(await r.read())
-                res = d.get("result") or d
-                value = float(res.get("collaterals_value") or 0.0)
-                locked = 0.0
-                for c in res.get("collaterals") or []:
-                    try:
-                        locked += float(c.get("initial_margin") or 0.0)
-                    except (TypeError, ValueError):
-                        pass
-                return value, locked
+        res = await _derive.get_account_summary(creds)
+        if not isinstance(res, dict):
+            return 0.0, 0.0
+        value = float(res.get("collaterals_value") or res.get("subaccount_value") or 0.0)
+        locked = float(res.get("positions_initial_margin") or 0.0) + float(
+            res.get("open_orders_margin") or 0.0
+        )
+        return value, locked
     except Exception as exc:  # noqa: BLE001
         logger.warning("theta_margin: derive collateral read failed: %s", exc)
         return 0.0, 0.0
+
 
 
 class Config(BaseModel):
@@ -89,6 +80,8 @@ class Config(BaseModel):
     fxrp_posted: float = Field(default=400.0, description="FXRP posted as margin, quote")
     usdc_sleeve: float = Field(default=400.0, description="USDC shock sleeve, quote")
     pile_cap: float = Field(default=400.0, description="Never short more than this")
+    race_short_frac: float = Field(default=0.80, description="Working short as fraction of pile")
+    min_short_quote: float = Field(default=15.0, description="Skip opens below this USD")
     drawdown_pct: float = Field(
         default=0.0, description="Account drawdown as a fraction (0.08 = 8%)"
     )
@@ -109,7 +102,15 @@ async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
     raw = allowed_short(fxrp, sleeve, cap)
     # The honest cap is the smaller of the desk rule and what Derive will fund.
     raw = min(raw, free_short) if free_short > 0 else raw
-    sized = drawdown_short(raw, config.drawdown_pct)
+    # Competition working size: race_frac of pile, never above free/allowed.
+    work = working_short(
+        cap,
+        free_short if free_short > 0 else raw,
+        race_frac=config.race_short_frac,
+        min_quote=config.min_short_quote,
+    )
+    work = min(work, raw) if raw > 0 else work
+    sized = drawdown_short(work if work > 0 else raw, config.drawdown_pct)
     tight = book_is_tight(
         fxrp,
         sleeve,
@@ -133,9 +134,10 @@ async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
             f"Mode {mode}  FXRP posted {fxrp:.2f}  sleeve {sleeve:.2f}  pile cap {cap:.2f}",
             f"Haircut IM {FXRP_IM_HAIRCUT:.0%}  MM {FXRP_MM_HAIRCUT:.0%}  perp IM {PERP_IM_CONTINGENCY:.0%}",
             f"Free-margin short cap {free_short:.2f}  ({cap_note})",
-            f"Allowed short {raw:.2f}  after drawdown {sized:.2f}  ({config.drawdown_pct:.1%})",
+            f"Desk allowed {raw:.2f}  working target {work:.2f}  ({config.race_short_frac:.0%} pile)",
+            f"After drawdown {sized:.2f}  ({config.drawdown_pct:.1%})  — open this size",
             f"Isolated perp IM ~{isolated_im:.2f}  book IM ~{book_im:.2f}  excess floor {min_excess:.2f}  status {status}",
-            "Never size to the full wallet. Sleeve stays posted.",
+            "Size to After drawdown. Never full wallet. Options default SIT.",
         ]
     )
     rid = await _math.save_report(
@@ -146,7 +148,8 @@ async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
             ("FXRP posted", f"{fxrp:.2f}"),
             ("Sleeve", f"{sleeve:.2f}"),
             ("Free-margin cap", f"{free_short:.2f}"),
-            ("Allowed short", f"{sized:.2f}"),
+            ("Working target", f"{work:.2f}"),
+            ("Open size", f"{sized:.2f}"),
         ],
         "Numbers only. No order. Never size to the full wallet — sleeve stays posted.",
         section="01 / BOOK",
@@ -175,14 +178,19 @@ async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
                         "Note": "Derive cross-margin limit",
                     },
                     {
-                        "Line": "Allowed short",
+                        "Line": "Desk allowed",
                         "Quote": f"{raw:.2f}",
-                        "Note": "before drawdown",
+                        "Note": "pile/haircut rule",
                     },
                     {
-                        "Line": "After drawdown",
+                        "Line": "Working target",
+                        "Quote": f"{work:.2f}",
+                        "Note": f"{config.race_short_frac:.0%} pile, free-capped",
+                    },
+                    {
+                        "Line": "Open size",
                         "Quote": f"{sized:.2f}",
-                        "Note": f"{config.drawdown_pct:.1%}",
+                        "Note": f"after DD {config.drawdown_pct:.1%}",
                     },
                 ],
                 ["Line", "Quote", "Note"],

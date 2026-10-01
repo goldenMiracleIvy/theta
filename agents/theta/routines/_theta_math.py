@@ -61,16 +61,17 @@ def free_margin_for_short(
     free. At 1x leverage a short needs ~100% margin, so the free dollar
     margin is the short-notional ceiling.
 
-    `collaterals_value` is the live subaccount total (FXRP haircut value +
-    USDC); `locked_im` is the sum of each asset's initial margin reported by
-    Derive (used directly when > 0, else estimated from `im_haircut`). A
+    `collaterals_value` is the live subaccount total; `locked_im` is margin
+    already consumed by **positions and open orders** (not each collateral
+    row's IM — on SM, USDC rows report IM == balance even when flat). A
     `safety` buffer is left so the create is never rejected at the edge.
     """
     fxrp = max(0.0, fxrp_posted)
     usdc = max(0.0, usdc_sleeve)
     if collaterals_value > 0:
-        used_im = locked_im if locked_im > 0 else (fxrp * im_haircut + usdc)
-        free = max(0.0, collaterals_value - used_im)
+        # locked_im == 0 is valid when flat (positions + open orders). Do not
+        # fall back to per-asset IM rows — SM USDC reports IM == balance.
+        free = max(0.0, collaterals_value - max(0.0, locked_im))
     else:
         free = max(0.0, fxrp * (1.0 - im_haircut) + usdc - fxrp * im_haircut)
     return max(0.0, round(free * safety, 2))
@@ -186,6 +187,69 @@ def split_wallet(wallet: float) -> tuple[float, float, float]:
         return 0.0, 0.0, 0.0
     half = round(wallet / 2.0, 2)
     return half, half, half
+
+
+def working_short(
+    pile_cap: float,
+    free_margin_cap: float,
+    *,
+    race_frac: float = 0.80,
+    min_quote: float = 15.0,
+) -> float:
+    """Race working size: safe fraction of pile, never above free margin.
+
+    ``race_frac`` default 0.80 leaves sleeve/IM headroom on a $400 pile
+    (working $320) while still large enough for funding P&L and hedge volume.
+    Below ``min_quote`` → 0 (do not open dust that fails the 10 XRP floor).
+    """
+    if pile_cap <= 0:
+        return 0.0
+    target = min(max(0.0, pile_cap) * max(0.0, race_frac), max(0.0, free_margin_cap))
+    target = round(target, 2)
+    return target if target >= min_quote else 0.0
+
+
+def base_xrp_for_short(quote_usd: float, xrp_usd: float, *,
+                     min_base: float = 10.0) -> float:
+    """Base XRP for a short. Venue min is 10 XRP; round down to 0.1 step."""
+    if quote_usd <= 0 or xrp_usd <= 0:
+        return 0.0
+    raw = quote_usd / xrp_usd
+    # 0.1 step (min_base_amount_increment on Derive XRP-USDC)
+    stepped = (int(raw * 10) / 10.0)
+    if stepped + 1e-12 < min_base:
+        return 0.0
+    return round(stepped, 1)
+
+
+def should_reload_hedge(
+    *,
+    cut_mark: float,
+    spot: float,
+    funding_pays_short: bool,
+    rearm_band: float = 0.02,
+) -> bool:
+    """After a +pump cut: reload when spot is back within band of cut mark."""
+    if not funding_pays_short or cut_mark <= 0 or spot <= 0:
+        return False
+    return spot <= cut_mark * (1.0 + rearm_band)
+
+
+def should_reopen_flat(
+    *,
+    funding_pays_short: bool,
+    flat_ticks: int,
+    min_flat_ticks: int = 2,
+    room_ok: bool,
+    working_quote: float,
+) -> bool:
+    """Re-open a full working short after being flat (volume + funding hours)."""
+    return (
+        funding_pays_short
+        and room_ok
+        and working_quote > 0
+        and int(flat_ticks) >= int(min_flat_ticks)
+    )
 
 
 async def save_report(

@@ -107,8 +107,8 @@ Routines never place exchange orders for the perp. Dry-run option premium is **n
 ```
 agents/theta/
   AGENT.md                              identity + risk philosophy
-  strategies/theta_funding_desk/        tick playbook (sizes, barriers, exits)
-    strategy.md
+  loops/theta_funding_desk/        tick playbook (sizes, barriers, exits)
+    loop.md
   routines/
     _theta_math.py                      pure sizing + pump/dump P&L
     _theta_derive.py                    THETA-only signed Derive REST (options)
@@ -208,9 +208,21 @@ Smoke test ($60): $30 / $30 / $30 — pass `wallet_usd=60` to clerks.
 
 ---
 
+
+### Competition sizing ($800 race)
+
+| Line | Value |
+|---|---|
+| Wallet | $800 |
+| FXRP / USDC sleeve | $400 / $400 |
+| Working short | **up to $320** (80% of pile, free-margin capped) |
+| Hard risk cap | `max_position_size_quote: 320` |
+| Options | default **SIT** — not required for P&L/volume |
+| Opens | fillable LIMIT, min **10 XRP**; avoid MARKET |
+
 ## Key parameters
 
-From `strategies/theta_funding_desk/strategy.md`:
+From `loops/theta_funding_desk/loop.md`:
 
 | Control | Value |
 |---|---|

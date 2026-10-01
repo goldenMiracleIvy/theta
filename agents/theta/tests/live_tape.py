@@ -54,7 +54,7 @@ async def main() -> int:
     if "No order" not in tape_out:
         print("[FAIL] tape must say it placed no order")
         bad = True
-    if "Allowed short" not in margin_out:
+    if ("Allowed short" not in margin_out) and ("Open size" not in margin_out) and ("working target" not in margin_out.lower()):
         print("[FAIL] margin missing allowed short")
         bad = True
     if "REFUSED SIT" not in sit_out:

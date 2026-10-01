@@ -56,7 +56,7 @@ async def main() -> int:
         await engine.stop()
         raise
 
-    exp = REPO / "agents/theta/strategies/theta_funding_desk/dry_runs"
+    exp = REPO / "agents/theta/loops/theta_funding_desk/dry_runs"
     files = sorted(exp.glob("experiment_*.md")) if exp.is_dir() else []
     print("dry-run complete")
     if files:

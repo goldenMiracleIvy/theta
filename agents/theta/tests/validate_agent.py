@@ -114,7 +114,7 @@ for s in strats:
         print("  [FAIL] short cap must be ≤ $400")
         ok = False
     exp = _slugify(s.name)
-    d = (REPO / "agents/theta/strategies" / exp).is_dir()
+    d = (REPO / "agents/theta/loops" / exp).is_dir()
     ok &= d
     print(f"  [{'OK' if d else 'FAIL'}] folder '{exp}' matches slugified name")
 

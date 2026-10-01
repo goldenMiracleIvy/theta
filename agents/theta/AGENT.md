@@ -98,3 +98,11 @@ Idle XRP earns nothing. Posted XRP on this house can collect a rate
 without selling the coins, and can sell a real call when the week pays.
 The dump is covered. The pump keeps most of the height after the cut.
 That is a copyable carry, not a candle guess.
+
+## Competition (48h)
+
+- **P&L:** funding on the matched short while FXRP stays parked.
+- **Volume:** hedge OPEN / pump-CUT / RELOAD / REOPEN fills — not options churn.
+- **Size:** working short ≈ 80% of the FXRP pile (cap $320 on the $800 race), never above free margin.
+- **Options:** default SIT. One call only if tape WRITE and `theta.option_live=yes`.
+- **Opens:** fillable LIMIT, ≥ 10 XRP. Avoid MARKET on this venue.
